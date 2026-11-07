@@ -4,10 +4,10 @@ Small Windows application I made to remap keyboard natively without the use of A
 ## Build
 ```bat
 make         :: list the targets below
-make all     :: build bin\keyboard.exe
-make run     :: stop, rebuild and start it
+make all     :: stop, rebuild and start it
+make build   :: build bin\keyboard.exe (stops it first if it has to relink)
 make kill    :: stop the running keyboard.exe
-make clean   :: remove build output
+make clean   :: stop it and remove build output
 ```
 
 ## Run on startup

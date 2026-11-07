@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <wtsapi32.h>
 
 #include "resource.h"
 
@@ -55,6 +56,16 @@ static LRESULT CALLBACK keyboard_hook(int code, WPARAM wparam, LPARAM lparam) {
     return CallNextHookEx(g_hook, code, wparam, lparam);
 }
 
+// Windows can silently drop a low-level hook (e.g. a slow callback during resume)
+static BOOL hook_install(void) {
+    HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_hook, GetModuleHandleW(NULL), 0);
+    if (!hook) { return FALSE; }
+
+    if (g_hook) { UnhookWindowsHookEx(g_hook); }
+    g_hook = hook;
+    return TRUE;
+}
+
 #define WM_TRAY (WM_APP + 1)
 #define ID_EXIT 1
 
@@ -89,7 +100,16 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
             if (LOWORD(wparam) == ID_EXIT) { DestroyWindow(hwnd); }
             return 0;
 
+        case WM_POWERBROADCAST:
+            if (wparam == PBT_APMRESUMEAUTOMATIC) { hook_install(); }
+            return TRUE;
+
+        case WM_WTSSESSION_CHANGE:
+            if (wparam == WTS_SESSION_UNLOCK) { hook_install(); }
+            return 0;
+
         case WM_DESTROY:
+            WTSUnRegisterSessionNotification(hwnd);
             Shell_NotifyIconW(NIM_DELETE, &g_tray);
             PostQuitMessage(0);
             return 0;
@@ -110,8 +130,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show) 
     HANDLE mutex = CreateMutexW(NULL, TRUE, L"Local\\alexflipnote.keyboard");
     if (GetLastError() == ERROR_ALREADY_EXISTS) { return 0; }
 
-    g_hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_hook, instance, 0);
-    if (!g_hook) {
+    if (!hook_install()) {
         MessageBoxW(NULL, L"Failed to install keyboard hook.", L"keyboard", MB_ICONERROR);
         return 1;
     }
@@ -124,6 +143,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show) 
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"keyboard", 0, 0, 0, 0, 0, NULL, NULL, instance, NULL);
 
     g_taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
+    WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
 
     g_tray.cbSize = sizeof(g_tray);
     g_tray.hWnd = hwnd;
